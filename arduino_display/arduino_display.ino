@@ -88,10 +88,32 @@ unsigned char len = 0;
 unsigned char buf[8];
 long unsigned int rxId;
 char msgString[80];
+uint8_t errorCountRX, errorCountTX, errorMask;
+uint8_t oldErrCountRX, oldErrCountTX, oldErrMask;
+
 
 void loop()
 {
+  errorCountRX = CAN.errorCountRX();
+  if (errorCountRX != 0 && oldErrCountRX != errorCountRX){
+      oldErrCountRX = errorCountRX;
+      sprintf(msgString, "Error count RX: %d", errorCountRX);
+      Serial.println(msgString);
+  }
 
+  errorCountTX = CAN.errorCountTX();
+  if (errorCountTX != 0 && oldErrCountTX != errorCountTX){
+      oldErrCountTX = errorCountTX;
+      sprintf(msgString, "Error count TX: %d", errorCountTX);
+      Serial.println(msgString);
+  }
+
+  errorMask = CAN.getError();
+  if (errorMask != 0 && oldErrMask != errorMask){
+      oldErrMask = errorMask;
+      sprintf(msgString, "Error mask TX: %x", errorMask);
+      Serial.println(msgString);
+  }
 
   if (CAN.checkReceive() == CAN_MSGAVAIL)           // check if data coming
   {
@@ -107,12 +129,13 @@ void loop()
 
     if ((rxId & 0x40000000) == 0x40000000) {  // Determine if message is a remote request frame.
       sprintf(msgString, " REMOTE REQUEST FRAME");
-      Serial.print(msgString);
+      Serial.println(msgString);
     } else {
       for (byte i = 0; i < len; i++) {
         sprintf(msgString, " 0x%.2X", buf[i]);
         Serial.print(msgString);
       }
+      Serial.println();
     }
 
     if (rxId == 0x071) {
@@ -122,8 +145,8 @@ void loop()
       value = value | buf[0];
       updateBarStatus(value);
       sprintf(msgString, "DAC 0x%.4X", value);
-      Serial.print(msgString);
-      Serial.println();
+      Serial.println(msgString);
+
     } else {
       updateLedStatus(buf[0]);
     }
