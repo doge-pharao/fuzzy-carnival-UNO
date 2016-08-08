@@ -28,7 +28,9 @@ const int SPI_CS_PIN = 10;
 
 MCP_CAN CAN(SPI_CS_PIN);                                    // Set CS pin
 
-
+  int16_t oldValue;
+  bool firstTime;
+  
 void setup()
 {
   Serial.begin(115200);
@@ -59,7 +61,13 @@ void setup()
   tft.drawCircle(145, 280, 20, ILI9341_WHITE);
   tft.drawCircle(195, 280, 20, ILI9341_WHITE);
 
+  char *message = "DAC Value";
+  for(char i=0; i < strlen(message); i++) {
+    tft.drawChar(35 + (i*16), 160, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
+  }
+  oldValue = 0x0001;
 
+  updateBarStatus(0x0000);
 }
 
 uint16_t barColor;
@@ -78,9 +86,18 @@ void updateLedStatus(uint8_t status) {
 }
 
 void updateBarStatus(uint16_t value) {
+  char message[16];
   uint16_t graphValue = (value / 0x0147);
-  tft.fillRect(190, 30 + graphValue, 40, 200 - graphValue, ILI9341_BLACK);
-  tft.fillRect(190, 30, 40, graphValue, ILI9341_BLUE);
+
+  tft.fillRect(190, 30, 40, 200 - graphValue, ILI9341_BLACK);
+  tft.fillRect(190, 230 - graphValue, 40, graphValue , ILI9341_BLUE);
+
+  tft.fillRect(50,230,130,16,ILI9341_BLACK);
+  sprintf(message, "0x%.4X", value);
+  for(char i=0; i < strlen(message); i++) {
+    tft.drawChar(60 + (i*16), 180, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
+  }
+
 }
 
 
@@ -91,9 +108,10 @@ char msgString[80];
 uint8_t errorCountRX, errorCountTX, errorMask;
 uint8_t oldErrCountRX, oldErrCountTX, oldErrMask;
 
-
 void loop()
 {
+
+  
   errorCountRX = CAN.errorCountRX();
   if (errorCountRX != 0 && oldErrCountRX != errorCountRX){
       oldErrCountRX = errorCountRX;
@@ -143,10 +161,13 @@ void loop()
       value = buf[1];
       value = value << 8;
       value = value | buf[0];
-      updateBarStatus(value);
+
+      if (value != oldValue) {
+        oldValue = value;
+        updateBarStatus(value);
+      }
       sprintf(msgString, "DAC 0x%.4X", value);
       Serial.println(msgString);
-
     } else {
       updateLedStatus(buf[0]);
     }

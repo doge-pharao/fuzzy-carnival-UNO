@@ -3,11 +3,27 @@
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9341.h"
 
-#define CUSTOM_ILI9341_ORANGE      0xFC60
-#define ORANGE_VALUE 0x1
-#define YELLOW_VALUE 0x2
-#define GREEN_VALUE 0x4
-#define BLUE_VALUE 0x8
+// The scrolling area must be a integral multiple of TEXT_HEIGHT
+#define TEXT_HEIGHT 16 // Height of text to be printed and scrolled
+#define BOT_FIXED_AREA 0 // Number of lines in bottom fixed area (lines counted from bottom of screen)
+#define TOP_FIXED_AREA 16 // Number of lines in top fixed area (lines counted from top of screen)
+
+// The initial y coordinate of the top of the scrolling area
+uint16_t yStart = TOP_FIXED_AREA;
+// yArea must be a integral multiple of TEXT_HEIGHT
+uint16_t yArea = 320-TOP_FIXED_AREA-BOT_FIXED_AREA;
+// The initial y coordinate of the top of the bottom text line
+uint16_t yDraw = 320 - BOT_FIXED_AREA - TEXT_HEIGHT;
+
+// Keep track of the drawing x coordinate
+uint16_t xPos = 0;
+// For the byte we read from the serial port
+byte data = 0;
+
+// We have to blank the top line each time the display is scrolled, but this takes up to 13 milliseconds
+// for a full width line, meanwhile the serial buffer may be filling... and overflowing
+// We can speed up scrolling of short text lines by just blanking the character we drew
+int blank[19]; // We keep all the strings pixel lengths to optimise the speed of the top line blanking
 
 // For the Adafruit shield
 #define TFT_MOSI 11
@@ -16,6 +32,11 @@
 #define TFT_MISO 12
 #define TFT_DC 7
 #define TFT_CS 9
+
+#define ILI9341_VSCRDEF 0x33
+#define ILI9341_VSCRSADD 0x37
+
+
 
 // If using the breakout, change pins as desired
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
@@ -37,6 +58,9 @@ void setup()
   tft.fillScreen(ILI9341_BLACK);
   tft.setCursor(0, 0);
   tft.setTextColor(ILI9341_WHITE);  tft.setTextSize(1);
+yDraw = scroll_line();
+  // read diagnostics (optional but can help debug problems)
+  uint8_t x = tft.readcommand8(ILI9341_RDMODE);
 
   while (CAN.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) != CAN_OK)              // init can bus : baudrate = 500k
   {
@@ -50,37 +74,6 @@ void setup()
   tft.println("CAN BUS Shield init ok!");
 
   CAN.setMode(MCP_NORMAL);                     // Set operation mode to normal so the MCP2515 sends acks to received data.
-
-  tft.drawRect(189, 29, 42, 202, ILI9341_WHITE);
-  tft.drawRect(188, 28, 44, 203, ILI9341_WHITE);
-
-  tft.drawCircle(45, 280, 20, ILI9341_WHITE);
-  tft.drawCircle(95, 280, 20, ILI9341_WHITE);
-  tft.drawCircle(145, 280, 20, ILI9341_WHITE);
-  tft.drawCircle(195, 280, 20, ILI9341_WHITE);
-
-
-}
-
-uint16_t barColor;
-
-
-void updateLedStatus(uint8_t status) {
-  uint16_t blueStatus = ((status & BLUE_VALUE) ? ILI9341_BLUE : ILI9341_BLACK);
-  uint16_t greenStatus = ((status & GREEN_VALUE) ? ILI9341_GREEN : ILI9341_BLACK);
-  uint16_t yellowStatus = ((status & YELLOW_VALUE) ? ILI9341_YELLOW : ILI9341_BLACK);
-  uint16_t orangeStatus = ((status & ORANGE_VALUE) ? ILI9341_RED : ILI9341_BLACK);
-
-  tft.fillCircle(45, 280, 19, blueStatus);
-  tft.fillCircle(95, 280, 19, greenStatus);
-  tft.fillCircle(145, 280, 19, yellowStatus);
-  tft.fillCircle(195, 280, 19, orangeStatus);
-}
-
-void updateBarStatus(uint16_t value) {
-  uint16_t graphValue = (value / 0x0147);
-  tft.fillRect(190, 30 + graphValue, 40, 200 - graphValue, ILI9341_BLACK);
-  tft.fillRect(190, 30, 40, graphValue, ILI9341_BLUE);
 }
 
 
@@ -88,6 +81,8 @@ unsigned char len = 0;
 unsigned char buf[8];
 long unsigned int rxId;
 char msgString[80];
+char buffStr[20];
+char i;
 
 void loop()
 {
@@ -99,38 +94,83 @@ void loop()
     CAN.readMsgBuf(&rxId, &len, buf);      // Read data: len = data length, buf = data byte(s)
 
     if ((rxId & 0x80000000) == 0x80000000)    // Determine if ID is standard (11 bits) or extended (29 bits)
-      sprintf(msgString, "Extended ID: 0x%.8lX  DLC: %1d  Data:", (rxId & 0x1FFFFFFF), len);
+      sprintf(msgString, "Ext ID:0x%.8lX  Len:%1d  Data:", (rxId & 0x1FFFFFFF), len);
     else
-      sprintf(msgString, "Standard ID: 0x%.3lX       DLC: %1d  Data:", rxId, len);
-
-    Serial.print(msgString);
+      sprintf(msgString, "Std ID:0x%.3lX  Len:%1d  Data:", rxId, len);
 
     if ((rxId & 0x40000000) == 0x40000000) {  // Determine if message is a remote request frame.
       sprintf(msgString, " REMOTE REQUEST FRAME");
       Serial.print(msgString);
     } else {
+      buffStr[0]='\0';
       for (byte i = 0; i < len; i++) {
-        sprintf(msgString, " 0x%.2X", buf[i]);
-        Serial.print(msgString);
+        sprintf(buffStr, "%s 0x%.2X", buffStr, buf[i]);
       }
+      sprintf(msgString, "%s%s\r", msgString, buffStr);
     }
+    Serial.print(msgString);
 
-    if (rxId == 0x071) {
-      uint16_t value = 0x0000;
-      value = buf[1];
-      value = value << 8;
-      value = value | buf[0];
-      updateBarStatus(value);
-      sprintf(msgString, "DAC 0x%.4X", value);
-      Serial.print(msgString);
-      Serial.println();
-    } else {
-      updateLedStatus(buf[0]);
-    }
     
+
+  for(char i=0; i<strlen(msgString); i++){
+    if (msgString[i] == '\r' || xPos>231) {
+      xPos = 0;
+      yDraw = scroll_line(); // It takes about 13ms to scroll 16 pixel lines
+    }
+    if (msgString[i] > 31 && msgString[i] < 128) {
+      tft.drawChar(xPos,yDraw,msgString[i], ILI9341_WHITE, ILI9341_BLACK, 1);
+      xPos += 6;
+      blank[(18+(yStart-TOP_FIXED_AREA)/TEXT_HEIGHT)%19]=xPos; // Keep a record of line lengths
+    }
+    //change_colour = 1; // Line to indicate buffer is being emptied
   }
+
+
+    msgString[0] = '\0';
+  }
+
 }
 
+
+// ##############################################################################################
+// Call this function to scroll the display one text line
+// ##############################################################################################
+int scroll_line() {
+  int yTemp = yStart; // Store the old yStart, this is where we draw the next line
+  // Use the record of line lengths to optimise the rectangle size we need to erase the top line
+  tft.fillRect(0,yStart,blank[(yStart-TOP_FIXED_AREA)/TEXT_HEIGHT],TEXT_HEIGHT, ILI9341_BLACK);
+
+  // Change the top of the scroll area
+  yStart+=TEXT_HEIGHT;
+  // The value must wrap around as the screen memory is a circular buffer
+  if (yStart >= 320 - BOT_FIXED_AREA) yStart = TOP_FIXED_AREA + (yStart - 320 + BOT_FIXED_AREA);
+  // Now we can scroll the display
+  scrollAddress(yStart);
+  return  yTemp;
+}
+
+// ##############################################################################################
+// Setup a portion of the screen for vertical scrolling
+// ##############################################################################################
+// We are using a hardware feature of the display, so we can only scroll in portrait orientation
+void setupScrollArea(uint16_t TFA, uint16_t BFA) {
+  tft.writecommand(ILI9341_VSCRDEF); // Vertical scroll definition
+  tft.writedata(TFA >> 8);
+  tft.writedata(TFA);
+  tft.writedata((320-TFA-BFA)>>8);
+  tft.writedata(320-TFA-BFA);
+  tft.writedata(BFA >> 8);
+  tft.writedata(BFA);
+}
+
+// ##############################################################################################
+// Setup the vertical scrolling start address
+// ##############################################################################################
+void scrollAddress(uint16_t VSP) {
+  tft.writecommand(ILI9341_VSCRSADD); // Vertical scrolling start address
+  tft.writedata(VSP>>8);
+  tft.writedata(VSP);
+}
 /*********************************************************************************************************
   END FILE
 *********************************************************************************************************/
