@@ -28,9 +28,9 @@ const int SPI_CS_PIN = 10;
 
 MCP_CAN CAN(SPI_CS_PIN);                                    // Set CS pin
 
-  int16_t oldValue;
-  bool firstTime;
-  
+int16_t oldValue;
+bool firstTime;
+
 void setup()
 {
   Serial.begin(115200);
@@ -62,8 +62,8 @@ void setup()
   tft.drawCircle(195, 280, 20, ILI9341_WHITE);
 
   char *message = "DAC Value";
-  for(char i=0; i < strlen(message); i++) {
-    tft.drawChar(35 + (i*16), 160, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
+  for (char i = 0; i < strlen(message); i++) {
+    tft.drawChar(35 + (i * 16), 160, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
   }
   oldValue = 0x0001;
 
@@ -92,10 +92,10 @@ void updateBarStatus(uint16_t value) {
   tft.fillRect(190, 30, 40, 200 - graphValue, ILI9341_BLACK);
   tft.fillRect(190, 230 - graphValue, 40, graphValue , ILI9341_BLUE);
 
-  tft.fillRect(50,230,130,16,ILI9341_BLACK);
+  tft.fillRect(50, 230, 130, 16, ILI9341_BLACK);
   sprintf(message, "0x%.4X", value);
-  for(char i=0; i < strlen(message); i++) {
-    tft.drawChar(60 + (i*16), 180, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
+  for (char i = 0; i < strlen(message); i++) {
+    tft.drawChar(60 + (i * 16), 180, message[i], ILI9341_WHITE, ILI9341_BLACK, 2);
   }
 
 }
@@ -111,26 +111,26 @@ uint8_t oldErrCountRX, oldErrCountTX, oldErrMask;
 void loop()
 {
 
-  
+
   errorCountRX = CAN.errorCountRX();
-  if (errorCountRX != 0 && oldErrCountRX != errorCountRX){
-      oldErrCountRX = errorCountRX;
-      sprintf(msgString, "Error count RX: %d", errorCountRX);
-      Serial.println(msgString);
+  if (errorCountRX != 0 && oldErrCountRX != errorCountRX) {
+    oldErrCountRX = errorCountRX;
+    sprintf(msgString, "Error count RX: %d", errorCountRX);
+    Serial.println(msgString);
   }
 
   errorCountTX = CAN.errorCountTX();
-  if (errorCountTX != 0 && oldErrCountTX != errorCountTX){
-      oldErrCountTX = errorCountTX;
-      sprintf(msgString, "Error count TX: %d", errorCountTX);
-      Serial.println(msgString);
+  if (errorCountTX != 0 && oldErrCountTX != errorCountTX) {
+    oldErrCountTX = errorCountTX;
+    sprintf(msgString, "Error count TX: %d", errorCountTX);
+    Serial.println(msgString);
   }
 
   errorMask = CAN.getError();
-  if (errorMask != 0 && oldErrMask != errorMask){
-      oldErrMask = errorMask;
-      sprintf(msgString, "Error mask TX: %x", errorMask);
-      Serial.println(msgString);
+  if (errorMask != 0 && oldErrMask != errorMask) {
+    oldErrMask = errorMask;
+    sprintf(msgString, "Error mask TX: %x", errorMask);
+    Serial.println(msgString);
   }
 
   if (CAN.checkReceive() == CAN_MSGAVAIL)           // check if data coming
@@ -156,22 +156,30 @@ void loop()
       Serial.println();
     }
 
-    if (rxId == 0x071) {
-      uint16_t value = 0x0000;
-      value = buf[1];
-      value = value << 8;
-      value = value | buf[0];
-
-      if (value != oldValue) {
-        oldValue = value;
-        updateBarStatus(value);
-      }
-      sprintf(msgString, "DAC 0x%.4X", value);
-      Serial.println(msgString);
-    } else {
-      updateLedStatus(buf[0]);
+    switch (rxId) {
+      case 0x070:
+        updateLedStatus(buf[0]);
+        break;
+        
+      case 0x071: { 
+          uint16_t value = 0x0000;
+          value = buf[1];
+          value = value << 8;
+          value = value | buf[0];
+  
+          if (value != oldValue) {
+            oldValue = value;
+            updateBarStatus(value);
+          }
+          sprintf(msgString, "DAC 0x%.4X", value);
+          Serial.println(msgString);
+        }
+        break;
+        
+      default:
+        break;
     }
-    
+
   }
 }
 
