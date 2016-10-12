@@ -19,7 +19,7 @@ volatile boolean tick = false; // La definimos como volatile
 
 const byte signals_for_b[4] = { ACC_POSITION, BRAKE_PRESURE_CYL, BRACKE_PRESURE_LINE, VEHICLE_SPEED };
 const byte signals_for_d[6] = { TRAC_BATT_VOLTAGE, TRAC_BATT_CURR, AUX_BATT_TEMP, AUX_BATT_VOLTAGE, TRAC_BATT_TEMP, AUX_BATT_CURR };
-const int period[MAX_BOXES] = { 10, 100, 100, 100, 100, 100, 100, 100, 200, 300 };
+const int period[MAX_BOXES] = { 30, 100, 100, 100, 100, 100, 100, 100, 200, 300 };
 unsigned int ok_messages[MAX_BOXES], fail_messages[MAX_BOXES];
 bool complete[MAX_BOXES];
 boolean ready_to_send[MAX_BOXES];
@@ -87,7 +87,6 @@ void loop()
       for (i = 0; i < MAX_BOXES; i++) {
         if (ok_messages[i] + fail_messages[i] < MAX_MESSAGES && !complete[i]) {
           current_time[i]++;
-
           if (!ready_to_send[i]) {
             if (current_time[i] >= period[i]) {
               current_time[i] = 0;

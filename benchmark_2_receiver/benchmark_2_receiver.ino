@@ -22,8 +22,8 @@
 #define ACC_POSITION_SIGNAL 64               // Accelerator Position
 #define BRAKE_PRESURE_CYL_SIGNAL 128          // Brake Pressure, Master Cylinder
 
-#define BRACKE_PRESURE_LINE_SIGNAL 1        // Brake Pressure, Line
-#define VEHICLE_SPEED_SIGNAL 2              // Vehicle Speed
+#define BRACKE_PRESURE_LINE_SIGNAL 64        // Brake Pressure, Line
+#define VEHICLE_SPEED_SIGNAL 128              // Vehicle Speed
 
 #define MAX_MESSAGES 10
 #define MAX_BOXES 10
@@ -113,49 +113,28 @@ void loop()
   while (mytick < 10000 && complete_amount < MAX_BOXES) {
     signal_from_port_a = PINA;
     signal_from_port_c = PINC;
+
     PINA = 0x00;
     PINB = 0x00;
     
-    if (previous_a != signal_from_port_a && signal_from_port_a) {
-      previous_a = signal_from_port_a;
-      for (i = 0; i < 8; i++) {
-        if (ok_messages[i] + fail_messages[i] < MAX_MESSAGES && !complete[i]) {
-          if (signal_from_port_a & signals_for_a[i]) {
-            if (!ready_to_send[i]) {
-                ready_to_send[i] = true;
-                times[i][ok_messages[i] + fail_messages[i]] = micros();
-              }
-            } 
-         } // else something
-         else {
-            if (!complete[i]) {
-              complete[i] = true;
-              complete_amount++;
-            }
-          }          
+    if (signal_from_port_a) {
+        for (i = 0; i < 8; i++) {
+          if (!ready_to_send[i] && (!complete[i]) && (signal_from_port_a & signals_for_a[i])){
+            ready_to_send[i] = true;
+            times[i][ok_messages[i] + fail_messages[i]] = micros();
           }
-      }
-
-      if (previous_c != signal_from_port_c && signal_from_port_c) {
-      previous_c = signal_from_port_c;
+        }
+        signal_from_port_a = 0x00;
+     }
+     
+    if (signal_from_port_c) {
       for (i = 8; i < MAX_BOXES; i++) {
-        if (ok_messages[i] + fail_messages[i] < MAX_MESSAGES && !complete[i]) {
-          if (signal_from_port_a & signals_for_a[i]) {
-            if (!ready_to_send[i]) {
-                ready_to_send[i] = true;
-                times[i][ok_messages[i] + fail_messages[i]] = micros();
-              }
-            } 
-            } // else something
-         else {
-            if (!complete[i]) {
-              complete[i] = true;
-              complete_amount++;
-            }
-          }          
-          }
+          if (!ready_to_send[i] && (!complete[i]) && (signal_from_port_c & signals_for_c[i])){
+            ready_to_send[i] = true;
+            times[i][ok_messages[i] + fail_messages[i]] = micros();
+          }         
       }
-    
+    }  
 
     i = 0;
     while (i < MAX_BOXES && !ready_to_send[i]) {
@@ -166,7 +145,7 @@ void loop()
       message = i;
       ready_to_send[message] = false;
       order[count_messages] = message;
-      count_messages++;
+      count_messages++; 
     }
     else
       message = 255;
@@ -258,15 +237,19 @@ void loop()
         break;
     }
 
-    if (sndStat == CAN_OK) {
-      ok_messages[message]++;
-    }
-    else {
-      if (sndStat == CAN_SENDMSGTIMEOUT) {
-        fail_messages[message]++;
+    if (sndStat != 255) {
+      if (sndStat == CAN_OK) {
+        ok_messages[message]++;
+      } else {
+        if (sndStat == CAN_SENDMSGTIMEOUT) {
+          fail_messages[message]++;
+        }
+      }
+      if (ok_messages[message] + fail_messages[message] == MAX_MESSAGES) {
+        complete[message] = true;
+        complete_amount++;
       }
     }
-
     current = millis();
     total_delay_tx = total_delay_tx + delay_tx;
   }
